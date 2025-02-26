@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Driver Page</title>
+    {% include 'includes/head.html' %}
+  </head>
+  <body>
+    <div id="map" style="height: 400px"></div>
+
+    <script>
+      const socket = new WebSocket(`ws://127.0.0.1:3000/ws/drivers/`, [], {
+        headers: {
+          Cookie: document.cookie,
+        },
+      });
+      socket.onopen = function () {
+        console.log("WebSocket connected!");
+        socket.send(
+          JSON.stringify({
+            message: "Hello from the client",
+            task_type: "general",
+          })
+        );
+      };
+    </script>
+
+    <script>
+            var map = L.map("map").setView([{{ latitude }}, {{ longitude }}], {{ zoom_level }});
+
+            L.tileLayer("{{ tile_url }}", {
+              attribution: "{{ map_attribution }}",
+              subdomains: {{ subdomains|safe }},
+            }).addTo(map);
+
+
+      let currentLocationMarker;
+      let selectedLocationMarker;
+
+      function getUserLocation() {
+          if (navigator.geolocation) {
+              navigator.geolocation.watchPosition(
+                  async (position) => {
+                      const lat = position.coords.latitude;
+                      const lng = position.coords.longitude;
+
+
+                      if (currentLocationMarker) {
+                          currentLocationMarker.setLatLng([lat, lng]); // Update marker position
+                      } else {
+                          currentLocationMarker = L.marker([lat, lng], {icon: greenIcon}).addTo(map) // Green icon
+                              .bindPopup("Your Location");
+                      }
+
+                      map.setView([lat, lng], 15); // Center the map
+
+                  },
+                  (error) => {
+                      console.error("Error getting location: ", error.message);
+                  },
+                  { enableHighAccuracy: true }
+              );
+          } else {
+              alert("Geolocation is not supported by this browser.");
+          }
+      }
+
+
+
+      async function getAreaName(lat,lng){
+        try {
+          const url = `https://api.opencagedata.com/geocode/v1/json?q=${lat},${lng}&key={{apiKey}}`;
+
+          const response = await fetch(url);
+          if (!response.ok) {
+              throw new Error(`Geocoding API error: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.results && data.results.length > 0) {
+              const components = data.results[0].components;
+              const areaName = components.village || components.neighbourhood || components.suburb || components.city_district || components.city || components.county || "Area name not found"; //
+              return areaName;
+          } else {
+              console.log("No results found from geocoding API.");
+              return "Area name not found";
+          }
+
+      } catch (error) {
+          console.error("Error during geocoding:", error);
+          return "Area name not found";
+      }
+      }
+
+      function calculateDistance() {
+          if (currentLocationMarker && selectedLocationMarker) {
+              const currentLatLng = currentLocationMarker.getLatLng();
+              const selectedLatLng = selectedLocationMarker.getLatLng();
+
+              const distance = currentLatLng.distanceTo(selectedLatLng); // Distance in meters
+
+              const distanceKm = (distance / 1000).toFixed(2); // Convert to kilometers
+
+              // Display the distance (e.g., in a popup or a separate element)
+              const popupContent = `Distance: ${distanceKm} km`;
+              currentLocationMarker.bindPopup(popupContent).openPopup(); // Update popup
+          }
+      }
+
+      // Custom Icons (define these outside your functions)
+      const greenIcon = new L.Icon({
+          iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-green.png',
+          shadowUrl: 'https://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+          iconSize: [38, 95],
+          shadowSize: [50, 64],
+          iconAnchor: [22, 94],
+          shadowAnchor: [4, 62],
+          popupAnchor: [-3, -76]
+      });
+
+      const redIcon = new L.Icon({ ...greenIcon.options, iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-red.png' }); // Reuse greenIcon options
+
+
+      getUserLocation();
+    </script>
+  </body>
+</html>

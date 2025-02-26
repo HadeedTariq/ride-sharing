@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hello</title>
+    <meta name="csrf-token" content="{{ csrf_token }}" />
+    {% include 'includes/head.html' %}
+    <style>
+      .driver-card {
+        transition: transform 0.3s ease-in-out;
+      }
+      .driver-card:hover {
+        transform: scale(1.05);
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Select Pickup & Drop-off Locations</h2>
+
+    <div id="map" style="height: 400px"></div>
+
+    <form id="post-form">
+      <input
+        type="text"
+        id="pickup"
+        name="pickup"
+        placeholder="Pickup Location"
+      />
+      <input
+        type="text"
+        id="dropoff"
+        name="dropoff"
+        placeholder="Drop-off Location"
+      />
+      <input type="text" id="currentLocation" name="currentLocation" hidden />
+      <input type="text" id="destination" name="destination" hidden />
+      <button type="submit">Request Ride</button>
+    </form>
+
+    <div class="container mt-5">
+      <h2 class="text-center mb-4">Nearby Drivers</h2>
+      <div id="driversContainer" class="row justify-content-center"></div>
+    </div>
+
+    <script>
+            var map = L.map("map").setView([{{ latitude }}, {{ longitude }}], {{ zoom_level }});
+            const pickup = document.getElementById("pickup")
+            const dropoff = document.getElementById("dropoff")
+            L.tileLayer("{{ tile_url }}", {
+              attribution: "{{ map_attribution }}",
+              subdomains: {{ subdomains|safe }},
+            }).addTo(map);
+
+
+      let currentLocationMarker;
+      let selectedLocationMarker;
+
+      function getUserLocation() {
+          if (navigator.geolocation) {
+              navigator.geolocation.watchPosition(
+                  async (position) => {
+                      const lat = position.coords.latitude;
+                      const lng = position.coords.longitude;
+
+                      document.getElementById("currentLocation").value=`${lat}----${lng}`;
+
+                      if (currentLocationMarker) {
+                          currentLocationMarker.setLatLng([lat, lng]); // Update marker position
+                      } else {
+                          currentLocationMarker = L.marker([lat, lng], {icon: greenIcon}).addTo(map) // Green icon
+                              .bindPopup("Your Location");
+                      }
+
+                      map.setView([lat, lng], 15); // Center the map
+                      const areaName= await getAreaName(lat,lng)
+                      pickup.value = areaName
+
+                      if (selectedLocationMarker) { // Calculate distance if selected marker exists
+                          calculateDistance();
+                      }
+
+                  },
+                  (error) => {
+                      console.error("Error getting location: ", error.message);
+                  },
+                  { enableHighAccuracy: true }
+              );
+          } else {
+              alert("Geolocation is not supported by this browser.");
+          }
+      }
+
+
+      async function selectLocation(lat, lng) {
+          if (selectedLocationMarker) {
+              selectedLocationMarker.setLatLng([lat, lng]);
+            } else {
+                selectedLocationMarker = L.marker([lat, lng], {icon: redIcon}).addTo(map) // Red icon
+                .bindPopup("Selected Location");
+            }
+            const areaName= await getAreaName(lat,lng)
+            dropoff.value = areaName
+            document.getElementById("destination").value=`${lat}----${lng}`;  // Function to set selected location
+          calculateDistance();
+      }
+
+      async function getAreaName(lat,lng){
+        console.log(lat,lng)
+        try {
+
+          const url = `https://api.opencagedata.com/geocode/v1/json?q=${lat},${lng}&key={{apiKey}}`;
+
+          const response = await fetch(url);
+          if (!response.ok) {
+              throw new Error(`Geocoding API error: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.results && data.results.length > 0) {
+              const components = data.results[0].components;
+              const areaName = components.village || components.neighbourhood || components.suburb || components.city_district || components.city || components.county || "Area name not found"; //
+              return areaName;
+          } else {
+              console.log("No results found from geocoding API.");
+              return "Area name not found";
+          }
+
+      } catch (error) {
+          console.error("Error during geocoding:", error);
+          return "Area name not found";
+      }
+      }
+
+      function calculateDistance() {
+          if (currentLocationMarker && selectedLocationMarker) {
+              const currentLatLng = currentLocationMarker.getLatLng();
+              const selectedLatLng = selectedLocationMarker.getLatLng();
+
+              const distance = currentLatLng.distanceTo(selectedLatLng); // Distance in meters
+
+              const distanceKm = (distance / 1000).toFixed(2); // Convert to kilometers
+
+              // Display the distance (e.g., in a popup or a separate element)
+              const popupContent = `Distance: ${distanceKm} km`;
+              currentLocationMarker.bindPopup(popupContent).openPopup(); // Update popup
+          }
+      }
+
+      // Custom Icons (define these outside your functions)
+      const greenIcon = new L.Icon({
+          iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-green.png',
+          shadowUrl: 'https://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+          iconSize: [38, 95],
+          shadowSize: [50, 64],
+          iconAnchor: [22, 94],
+          shadowAnchor: [4, 62],
+          popupAnchor: [-3, -76]
+      });
+
+      const redIcon = new L.Icon({ ...greenIcon.options, iconUrl: 'https://leafletjs.com/examples/custom-icons/leaf-red.png' }); // Reuse greenIcon options
+
+
+      // Example usage (you'd call this when a user clicks on the map, for instance)
+      map.on('click', function(e) {
+          selectLocation(e.latlng.lat, e.latlng.lng);
+      });
+
+      getUserLocation(); // Call to get initial location
+    </script>
+
+    <script>
+      function getCSRFToken() {
+        const csrfToken = document
+          .querySelector('meta[name="csrf-token"]')
+          .getAttribute("content");
+        return csrfToken;
+      }
+
+      const postForm = document.querySelector("#post-form");
+      postForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+        const data = Object.fromEntries(formData);
+        const actualData = {
+          pickup: data.pickup,
+          dropoff: data.dropoff,
+          currentLocation: data.currentLocation,
+          destination: data.destination,
+        };
+
+        const csrf_token = getCSRFToken();
+
+        fetch("/ride/home/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrf_token, // Include the CSRF token here
+          },
+          body: JSON.stringify(actualData),
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(
+                "Network response was not ok " + response.statusText
+              );
+            }
+            return response.json();
+          })
+          .then((data) => {
+            const container = document.getElementById("driversContainer");
+            container.innerHTML = ""; // Clear previous content
+
+            data.nearby_drivers.forEach((driver) => {
+              const driverCard = `
+                    <div class="col-md-4 mb-3">
+                        <div class="card shadow driver-card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${driver}</h5>
+                                <p class="card-text">Available for your ride.</p>
+                                <button class="btn btn-primary accept-btn" data-driver="${driver}">Accept</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+              container.innerHTML += driverCard;
+            });
+
+            document.querySelectorAll(".accept-btn").forEach((button) => {
+              button.addEventListener("click", function () {
+                const selectedDriver = this.getAttribute("data-driver");
+
+                // Send POST request
+                fetch("/ride/accept_driver/", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrf_token, // Include the CSRF token here
+                  },
+                  body: JSON.stringify({
+                    driver_name: selectedDriver,
+                    ride_id: data.ride_id,
+                    currentLocation: actualData.currentLocation,
+                    destinationLocation: actualData.destination,
+                  }),
+                })
+                  .then((response) => response.json())
+                  .then((data) => {
+                    // Remove all driver cards after selection
+                    document.getElementById("driversContainer").innerHTML = `
+                    <div class="alert alert-success text-center">
+                        <p>You have selected <strong>${selectedDriver}</strong>! Your ride fare is <strong>${data.estimated_fare}</strong></p>
+                        <div class="d-flex justify-content-center mt-3">
+                            <button class="btn btn-success me-2" id="acceptRide">Accept</button>
+                            <button class="btn btn-danger" id="cancelRide">Cancel</button>
+                        </div>
+                    </div>
+                `;
+                    console.log(data);
+                    // Handle Accept Button Click
+                    document
+                      .getElementById("acceptRide")
+                      .addEventListener("click", function () {
+                        fetch("/ride/approve_ride/", {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": csrf_token, // Include the CSRF token here
+                          },
+                          body: JSON.stringify({
+                            ride_id: data.ride_id,
+                          }),
+                        })
+                          .then((response) => response.json())
+                          .then((res) => {
+                            document.getElementById(
+                              "driversContainer"
+                            ).innerHTML = `
+                            <div class="alert alert-info text-center">Ride accepted successfully! 🚗 Ride ID: ${res.ride_id}</div>
+                        `;
+                          })
+                          .catch((error) => console.error("Error:", error));
+                      });
+
+                    // Handle Cancel Button Click
+                    document
+                      .getElementById("cancelRide")
+                      .addEventListener("click", function () {
+                        document.getElementById(
+                          "driversContainer"
+                        ).innerHTML = `
+                        <div class="alert alert-warning text-center">Ride request canceled ❌</div>
+                    `;
+                      });
+                  })
+                  .catch((error) => console.error("Error this:", error));
+              });
+            });
+          })
+          .catch((error) => {
+            console.error("Error:", error); // Handle any errors
+          });
+      });
+    </script>
+  </body>
+</html>

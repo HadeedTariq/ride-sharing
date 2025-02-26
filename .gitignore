@@ -1,0 +1,32 @@
+# Ignore environment variables & sensitive settings
+.env
+secrets.json
+
+# Ignore database files
+db.sqlite3
+
+certs/
+
+# Ignore Python cache & compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore virtual environments
+.venv/
+env/
+
+# Ignore logs & debugging files
+logs/
+*.log
+debug.log
+
+# Ignore media/uploads
+media/
+
+# Ignore migrations (optional)
+*/migrations/*.py
+*/migrations/__pycache__/
+
+# Ignore static files (if dynamically generated)
+static/

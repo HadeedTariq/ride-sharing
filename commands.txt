@@ -1,0 +1,1 @@
+nodemon --exec "daphne -p 3000 ride_proj.asgi:application" --ext py,html,.env
