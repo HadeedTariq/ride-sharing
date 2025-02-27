@@ -230,7 +230,7 @@
             document.querySelectorAll(".accept-btn").forEach((button) => {
               button.addEventListener("click", function () {
                 const selectedDriver = this.getAttribute("data-driver");
-
+                console.log(selectedDriver);
                 // Send POST request
                 fetch("/ride/accept_driver/", {
                   method: "POST",
@@ -270,6 +270,7 @@
                           },
                           body: JSON.stringify({
                             ride_id: data.ride_id,
+                            driver_id: data.driver_id,
                           }),
                         })
                           .then((response) => response.json())
@@ -287,14 +288,30 @@
                     document
                       .getElementById("cancelRide")
                       .addEventListener("click", function () {
-                        document.getElementById(
-                          "driversContainer"
-                        ).innerHTML = `
-                        <div class="alert alert-warning text-center">Ride request canceled ❌</div>
-                    `;
+                        fetch("/ride/cancel_ride/", {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": csrf_token, // Include the CSRF token here
+                          },
+                          body: JSON.stringify({
+                            ride_id: data.ride_id,
+                          }),
+                        })
+                          .then((response) => response.json())
+                          .then((res) => {
+                            document.getElementById(
+                              "driversContainer"
+                            ).innerHTML = `
+                            <div class="alert alert-warning text-center">Ride request canceled ❌</div>
+                        `;
+                          })
+                          .catch((error) =>
+                            console.error("Error Cancel:", error)
+                          );
                       });
                   })
-                  .catch((error) => console.error("Error this:", error));
+                  .catch((error) => console.error("Error general:", error));
               });
             });
           })

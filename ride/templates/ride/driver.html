@@ -5,16 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Driver Page</title>
     {% include 'includes/head.html' %}
+    <style>
+      #notification-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        max-width: 300px;
+      }
+    </style>
   </head>
   <body>
     <div id="map" style="height: 400px"></div>
+    <div id="notification-container"></div>
 
     <script>
-      const socket = new WebSocket(`ws://127.0.0.1:3000/ws/drivers/`, [], {
-        headers: {
-          Cookie: document.cookie,
-        },
-      });
+      const socket = new WebSocket(
+        `ws://127.0.0.1:3000/ws/drivers/{{driver_id}}/`,
+        [],
+        {
+          headers: {
+            Cookie: document.cookie,
+          },
+        }
+      );
       socket.onopen = function () {
         console.log("WebSocket connected!");
         socket.send(
@@ -24,9 +38,31 @@
           })
         );
       };
+      socket.onmessage = function (event) {
+        const data = JSON.parse(event.data);
+        console.log(data);
+        if (data.type === "ride_approval") {
+          showNotification(data.message);
+        }
+      };
+      function showNotification(message) {
+        const container = document.getElementById("notification-container");
+        const alertDiv = document.createElement("div");
+        alertDiv.className = "alert alert-success alert-dismissible fade show";
+        alertDiv.role = "alert";
+        alertDiv.innerHTML = `
+            <strong>Ride Approved!</strong> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        container.appendChild(alertDiv);
+
+        setTimeout(() => {
+          alertDiv.remove();
+        }, 5000);
+      }
     </script>
 
-    <script>
+    <script defer>
             var map = L.map("map").setView([{{ latitude }}, {{ longitude }}], {{ zoom_level }});
 
             L.tileLayer("{{ tile_url }}", {
@@ -44,6 +80,16 @@
                   async (position) => {
                       const lat = position.coords.latitude;
                       const lng = position.coords.longitude;
+                      socket.onopen = function () {
+                      socket.send(
+                          JSON.stringify({
+                            task_type: "driver_location",
+                            driver_id:"{{driver_id}}",
+                            latitude: lat,
+                            longitude: lng,
+                          })
+                        );
+                      }
 
 
                       if (currentLocationMarker) {

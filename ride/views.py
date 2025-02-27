@@ -7,6 +7,8 @@ import logging
 from .utils import estimate_fare
 from ride_proj.utils import redis_client
 from geopy.distance import geodesic
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 
 from authentication.models import User
@@ -38,7 +40,7 @@ def homepage(request):
             "drivers",
             currentLon,
             currentLat,
-            10,
+            100,
             unit="km",
         )
 
@@ -124,6 +126,7 @@ def acceptRide(request):
                 "message": "Ride accepted successfully",
                 "estimated_fare": estimated_fare,
                 "ride_id": ride_data.id,
+                "driver_id": driver_id,
             },
             status=200,
         )
@@ -143,21 +146,28 @@ def approveRide(request):
         data = json.loads(request.body)
         logger.info(data)
         ride_id = data.get("ride_id")
+        driver_id = data.get("driver_id")
 
         if not ride_id:
             return JsonResponse({"error": "Missing ride_id"}, status=400)
 
         # Fetch ride request safely
-        ride_request = RideRequest.objects.filter(id=ride_id).first()
-        if not ride_request:
+        ride = Ride.objects.filter(id=ride_id).first()
+        if not ride:
             return JsonResponse({"error": "Ride request not found"}, status=404)
 
         # Update ride request status
-        ride_request.status = "accepted"
-        ride_request.save()
-        print(ride_request.id)
+        ride.status = "accepted"
+        ride.save()
+
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"driver_{driver_id}",
+            {"type": "ride_approval", "message": "Your ride has been approved!"},
+        )
+
         return JsonResponse(
-            {"message": "Ride approved successfully", "ride_id": ride_request.id},
+            {"message": "Ride approved successfully", "ride_id": ride.id},
             status=200,
         )
 
@@ -169,9 +179,42 @@ def approveRide(request):
         return JsonResponse({"error": "Something went wrong"}, status=500)
 
 
+def cancelRide(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+
+        ride_id = data.get("ride_id")
+
+        if not ride_id:
+            return JsonResponse({"error": "Missing ride_id"}, status=400)
+
+        # Fetch ride request safely
+        ride = Ride.objects.filter(id=ride_id).first()
+        if not ride:
+            return JsonResponse({"error": "Ride request not found"}, status=404)
+
+        # Update ride request status
+        ride.status = "cancelled"
+        ride.save()
+
+        return JsonResponse(
+            {"message": "Ride cancelled successfully", "ride_id": ride.id},
+            status=200,
+        )
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+
+    except Exception as e:
+        logger.error(f"Unexpected error in cancelRide: {str(e)}", exc_info=True)
+        return JsonResponse({"error": "Something went wrong"}, status=500)
+
+
 def driverpage(request):
-    users = User.objects.values("id", "email")  # Specify the fields you need.
-    print(list(users))
+    driver_id = request.user_data["id"]
     context = {
         "tile_url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         "subdomains": ["a", "b", "c"],
@@ -180,5 +223,6 @@ def driverpage(request):
         "longitude": 74.3587,
         "map_attribution": "&copy; OpenStreetMap contributors",
         "apiKey": open_cage_api_key,
+        "driver_id": driver_id,
     }
     return render(request, "ride/driver.html", context)
