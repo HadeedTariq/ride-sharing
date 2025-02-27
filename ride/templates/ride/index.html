@@ -280,6 +280,25 @@
                             ).innerHTML = `
                             <div class="alert alert-info text-center">Ride accepted successfully! 🚗 Ride ID: ${res.ride_id}</div>
                         `;
+
+                            const socket = new WebSocket(
+                              `ws://127.0.0.1:3000/ws/customers/{{customer_id}}/`,
+                              [],
+                              {
+                                headers: {
+                                  Cookie: document.cookie,
+                                },
+                              }
+                            );
+                            socket.onopen = function () {
+                              console.log("WebSocket connected!");
+                              socket.send(
+                                JSON.stringify({
+                                  message: "Hello from the client",
+                                  task_type: "general",
+                                })
+                              );
+                            };
                           })
                           .catch((error) => console.error("Error:", error));
                       });

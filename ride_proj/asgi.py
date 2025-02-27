@@ -20,6 +20,10 @@ application = ProtocolTypeRouter(
                         r"ws/drivers/(?P<driver_id>\w+)/$",
                         consumers.DriverConsumer.as_asgi(),
                     ),
+                    re_path(
+                        r"ws/customers/(?P<customer_id>\w+)/$",
+                        consumers.CustomerConsumer.as_asgi(),
+                    ),
                 ]
             )
         ),

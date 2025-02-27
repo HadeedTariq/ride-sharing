@@ -22,6 +22,8 @@ open_cage_api_key = os.getenv("OPEN_CAGE_API_KEY")
 
 
 def homepage(request):
+    customer_id = request.user_data["id"]
+
     if request.method == "POST":
         data = json.loads(request.body)
         currentLocation = data.get("currentLocation")
@@ -60,6 +62,7 @@ def homepage(request):
         "longitude": 74.3587,
         "map_attribution": "&copy; OpenStreetMap contributors",
         "apiKey": open_cage_api_key,
+        "customer_id": customer_id,
     }
 
     return render(request, "ride/index.html", context)
@@ -163,7 +166,11 @@ def approveRide(request):
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             f"driver_{driver_id}",
-            {"type": "ride_approval", "message": "Your ride has been approved!"},
+            {
+                "type": "ride_approval",
+                "message": "Your ride has been approved!",
+                "customer_id": ride.rider_id,
+            },
         )
 
         return JsonResponse(

@@ -40,9 +40,36 @@
       };
       socket.onmessage = function (event) {
         const data = JSON.parse(event.data);
-        console.log(data);
+
         if (data.type === "ride_approval") {
           showNotification(data.message);
+          if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+              async (position) => {
+                const latitude = position.coords.latitude;
+                const longitude = position.coords.longitude;
+
+                setInterval(() => {
+                  const lat = (latitude + Math.random() * 0.01).toFixed(6); // Simulated Latitude
+                  const lon = (longitude + Math.random() * 0.01).toFixed(6); // Simulated Longitude
+
+                  const locationData = {
+                    task_type: "update_location",
+                    latitude: lat,
+                    longitude: lon,
+                    customer_id: data.customer_id,
+                  };
+
+                  // Send the location update to the server
+                  socket.send(JSON.stringify(locationData));
+                }, 3000);
+              },
+              (error) => {
+                console.error("Error getting location: ", error.message);
+              },
+              { enableHighAccuracy: true }
+            );
+          }
         }
       };
       function showNotification(message) {
