@@ -32,21 +32,19 @@ def loginUser(request):
         email = request.POST.get("email")
         password = request.POST.get("password")
         try:
-            drivers_list = list(
-                User.objects.values_list("id", "username", "password", "email")
-            )
-            print(drivers_list)
             # Convert QuerySet to a list
             user = User.objects.get(email=email)
             if user and User.is_password_correct(password, user.password):
                 successmessage += "Login successful"
                 tokens = generate_refresh_access_token(user)
-
-                response = HttpResponseRedirect("/ride/home/")
+                if user.role == "driver":
+                    response = HttpResponseRedirect("/ride/driver/home/")
+                else:
+                    response = HttpResponseRedirect("/ride/home/")
                 response.set_cookie(
                     "access_token",
                     tokens["access_token"],
-                    max_age=3600,
+                    max_age=3600 * 10,
                     httponly=True,
                     secure=True,
                     samesite="Strict",
@@ -54,7 +52,7 @@ def loginUser(request):
                 response.set_cookie(
                     "refresh_token",
                     tokens["refresh_token"],
-                    max_age=3600,
+                    max_age=3600 * 20,
                     httponly=True,
                     secure=True,
                     samesite="Strict",

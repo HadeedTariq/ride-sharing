@@ -76,6 +76,7 @@ class DriverConsumer(AsyncWebsocketConsumer):
                 self.customer_group,
                 {
                     "type": "broadcast_location",
+                    "task_type": "broadcast_location",
                     "latitude": latitude,
                     "longitude": longitude,
                 },

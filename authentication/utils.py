@@ -9,7 +9,8 @@ def generate_refresh_access_token(user):
     access_payload = {
         "username": user.username,  # Issued at time
         "email": user.email,
-        "id": user.id,  # Issued at time
+        "id": user.id,
+        "role": user.role,
     }
     refresh_payload = {"id": user.id}
 

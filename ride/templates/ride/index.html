@@ -171,171 +171,182 @@
     </script>
 
     <script>
-      function getCSRFToken() {
-        const csrfToken = document
-          .querySelector('meta[name="csrf-token"]')
-          .getAttribute("content");
-        return csrfToken;
-      }
+      document.addEventListener("DOMContentLoaded", function () {
+        function getCSRFToken() {
+          return document
+            .querySelector('meta[name="csrf-token"]')
+            .getAttribute("content");
+        }
 
-      const postForm = document.querySelector("#post-form");
-      postForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const formData = new FormData(event.target);
-        const data = Object.fromEntries(formData);
-        const actualData = {
-          pickup: data.pickup,
-          dropoff: data.dropoff,
-          currentLocation: data.currentLocation,
-          destination: data.destination,
-        };
+        async function sendPostRequest(url, data) {
+          const csrfToken = getCSRFToken();
+          try {
+            const response = await fetch(url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfToken,
+              },
+              body: JSON.stringify(data),
+            });
 
-        const csrf_token = getCSRFToken();
+            if (!response.ok)
+              throw new Error(`Request failed: ${response.statusText}`);
 
-        fetch("/ride/home/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrf_token, // Include the CSRF token here
-          },
-          body: JSON.stringify(actualData),
-        })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(
-                "Network response was not ok " + response.statusText
-              );
+            return await response.json();
+          } catch (error) {
+            console.error("Error:", error);
+          }
+        }
+
+        function handleDriverSelection(
+          driver,
+          rideId,
+          currentLocation,
+          destination
+        ) {
+          sendPostRequest("/ride/accept_driver/", {
+            driver_name: driver,
+            ride_id: rideId,
+            currentLocation,
+            destinationLocation: destination,
+          }).then((data) => {
+            if (data) {
+              document.getElementById("driversContainer").innerHTML = `
+              <div class="alert alert-success text-center">
+                <p>You have selected <strong>${driver}</strong>! Your ride fare is <strong>${data.estimated_fare}</strong></p>
+                <div class="d-flex justify-content-center mt-3">
+                  <button class="btn btn-success me-2" id="acceptRide">Accept</button>
+                  <button class="btn btn-danger" id="cancelRide">Cancel</button>
+                </div>
+              </div>
+            `;
+
+              document
+                .getElementById("acceptRide")
+                .addEventListener("click", () =>
+                  approveRide(data.ride_id, data.driver_id)
+                );
+              document
+                .getElementById("cancelRide")
+                .addEventListener("click", () => cancelRide(data.ride_id));
             }
-            return response.json();
-          })
-          .then((data) => {
-            const container = document.getElementById("driversContainer");
-            container.innerHTML = ""; // Clear previous content
+          });
+        }
 
-            data.nearby_drivers.forEach((driver) => {
-              const driverCard = `
-                    <div class="col-md-4 mb-3">
-                        <div class="card shadow driver-card">
-                            <div class="card-body text-center">
-                                <h5 class="card-title">${driver}</h5>
-                                <p class="card-text">Available for your ride.</p>
-                                <button class="btn btn-primary accept-btn" data-driver="${driver}">Accept</button>
-                            </div>
-                        </div>
+        function approveRide(rideId, driverId) {
+          sendPostRequest("/ride/approve_ride/", {
+            ride_id: rideId,
+            driver_id: driverId,
+          }).then((res) => {
+            if (res) {
+              document.getElementById("driversContainer").innerHTML = `
+              <div class="alert alert-info text-center">Ride accepted successfully! 🚗 Ride ID: ${res.ride_id}</div>
+            `;
+              initializeWebSocket();
+            }
+          });
+        }
+
+        function cancelRide(rideId) {
+          sendPostRequest("/ride/cancel_ride/", { ride_id: rideId }).then(
+            (res) => {
+              if (res) {
+                document.getElementById("driversContainer").innerHTML = `
+              <div class="alert alert-warning text-center">Ride request canceled ❌</div>
+            `;
+              }
+            }
+          );
+        }
+
+        function initializeWebSocket() {
+          const socket = new WebSocket(
+            `ws://127.0.0.1:3000/ws/customers/{{customer_id}}/`
+          );
+
+          socket.onopen = () => console.log("WebSocket connected!");
+
+          let driverMarker = L.marker([{{latitude}}, {{longitude}}], {
+            icon: L.icon({
+              iconUrl:
+                "https://cdn-icons-png.flaticon.com/512/1086/1086073.png",
+              iconSize: [40, 40],
+            }),
+          }).addTo(map);
+          socket.onmessage = (event) => {
+            function updateDriverLocation(data) {
+              if (data.task_type === "broadcast_location") {
+                document.getElementById("post-form").style.display = "none";
+                document.querySelector(".container").style.display = "none";
+
+                if (!map) {
+                  map = L.map("map").setView(
+                    [data.latitude, data.longitude],
+                    12
+                  );
+                  L.tileLayer(
+                    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    {
+                      attribution: "&copy; OpenStreetMap contributors",
+                    }
+                  ).addTo(map);
+                } else {
+                  driverMarker.setLatLng([data.latitude, data.longitude]);
+                  map.panTo([data.latitude, data.longitude]);
+                }
+              }
+            }
+            updateDriverLocation(JSON.parse(event.data));
+          };
+        }
+
+        document
+          .querySelector("#post-form")
+          .addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+            const data = Object.fromEntries(formData);
+            const actualData = {
+              pickup: data.pickup,
+              dropoff: data.dropoff,
+              currentLocation: data.currentLocation,
+              destination: data.destination,
+            };
+
+            sendPostRequest("/ride/home/", actualData).then((response) => {
+              if (response) {
+                const container = document.getElementById("driversContainer");
+                container.innerHTML = "";
+
+                response.nearby_drivers.forEach((driver) => {
+                  const driverCard = `
+                <div class="col-md-4 mb-3">
+                  <div class="card shadow driver-card">
+                    <div class="card-body text-center">
+                      <h5 class="card-title">${driver}</h5>
+                      <p class="card-text">Available for your ride.</p>
+                      <button class="btn btn-primary accept-btn" data-driver="${driver}">Accept</button>
                     </div>
-                `;
-              container.innerHTML += driverCard;
+                  </div>
+                </div>
+              `;
+                  container.innerHTML += driverCard;
+                });
+
+                document.querySelectorAll(".accept-btn").forEach((button) => {
+                  button.addEventListener("click", function () {
+                    handleDriverSelection(
+                      this.getAttribute("data-driver"),
+                      response.ride_id,
+                      actualData.currentLocation,
+                      actualData.destination
+                    );
+                  });
+                });
+              }
             });
-
-            document.querySelectorAll(".accept-btn").forEach((button) => {
-              button.addEventListener("click", function () {
-                const selectedDriver = this.getAttribute("data-driver");
-                console.log(selectedDriver);
-                // Send POST request
-                fetch("/ride/accept_driver/", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": csrf_token, // Include the CSRF token here
-                  },
-                  body: JSON.stringify({
-                    driver_name: selectedDriver,
-                    ride_id: data.ride_id,
-                    currentLocation: actualData.currentLocation,
-                    destinationLocation: actualData.destination,
-                  }),
-                })
-                  .then((response) => response.json())
-                  .then((data) => {
-                    // Remove all driver cards after selection
-                    document.getElementById("driversContainer").innerHTML = `
-                    <div class="alert alert-success text-center">
-                        <p>You have selected <strong>${selectedDriver}</strong>! Your ride fare is <strong>${data.estimated_fare}</strong></p>
-                        <div class="d-flex justify-content-center mt-3">
-                            <button class="btn btn-success me-2" id="acceptRide">Accept</button>
-                            <button class="btn btn-danger" id="cancelRide">Cancel</button>
-                        </div>
-                    </div>
-                `;
-                    console.log(data);
-                    // Handle Accept Button Click
-                    document
-                      .getElementById("acceptRide")
-                      .addEventListener("click", function () {
-                        fetch("/ride/approve_ride/", {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "X-CSRFToken": csrf_token, // Include the CSRF token here
-                          },
-                          body: JSON.stringify({
-                            ride_id: data.ride_id,
-                            driver_id: data.driver_id,
-                          }),
-                        })
-                          .then((response) => response.json())
-                          .then((res) => {
-                            document.getElementById(
-                              "driversContainer"
-                            ).innerHTML = `
-                            <div class="alert alert-info text-center">Ride accepted successfully! 🚗 Ride ID: ${res.ride_id}</div>
-                        `;
-
-                            const socket = new WebSocket(
-                              `ws://127.0.0.1:3000/ws/customers/{{customer_id}}/`,
-                              [],
-                              {
-                                headers: {
-                                  Cookie: document.cookie,
-                                },
-                              }
-                            );
-                            socket.onopen = function () {
-                              console.log("WebSocket connected!");
-                              socket.send(
-                                JSON.stringify({
-                                  message: "Hello from the client",
-                                  task_type: "general",
-                                })
-                              );
-                            };
-                          })
-                          .catch((error) => console.error("Error:", error));
-                      });
-
-                    // Handle Cancel Button Click
-                    document
-                      .getElementById("cancelRide")
-                      .addEventListener("click", function () {
-                        fetch("/ride/cancel_ride/", {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "X-CSRFToken": csrf_token, // Include the CSRF token here
-                          },
-                          body: JSON.stringify({
-                            ride_id: data.ride_id,
-                          }),
-                        })
-                          .then((response) => response.json())
-                          .then((res) => {
-                            document.getElementById(
-                              "driversContainer"
-                            ).innerHTML = `
-                            <div class="alert alert-warning text-center">Ride request canceled ❌</div>
-                        `;
-                          })
-                          .catch((error) =>
-                            console.error("Error Cancel:", error)
-                          );
-                      });
-                  })
-                  .catch((error) => console.error("Error general:", error));
-              });
-            });
-          })
-          .catch((error) => {
-            console.error("Error:", error); // Handle any errors
           });
       });
     </script>

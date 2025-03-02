@@ -13,10 +13,17 @@ class RideMiddleware:
             if access_token:
                 try:
                     user = utils.validate_access_token(access_token)
+                    if (
+                        request.path.startswith("/ride/driver")
+                        and user["role"] != "driver"
+                    ):
+                        return redirect("/ride/home/")
+
                     request.user_data = user
                     response = self.get_response(request)
                     return response
                 except Exception as e:
+                    print(e)
                     return http.HttpResponse("Ivalid Token")
 
             else:
